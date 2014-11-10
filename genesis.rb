@@ -39,12 +39,19 @@ class Genesis < Formula
       system "make", "nxgenesis"
       system "make", "nxinstall"
     end
-
-    #system "make", "install INSTALLDIR=#{prefix}/genesis/#{version}"
   end
 
   test do
-    system "#{bin}/genesis"
+    (testpath/".simrc").install "#{prefix}/startup/.simrc"
+
+    (testpath/"test.g").write <<-EOS.undent
+      setrand -sprng
+      randseed 0
+      echo {rand 0 1} {rand 0 1} {rand 0 1} {rand 0 1} {rand 0 1}
+      quit
+    EOS
+
+    system "#{bin}/genesis", "#{testpath}/test.g"
 
     # `test do` will create, run in and delete a temporary directory.
     #
