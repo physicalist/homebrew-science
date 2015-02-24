@@ -3,9 +3,9 @@ require "formula"
 class Genesis < Formula
   # description "GENESIS is the GEneral NEural SImulator Suite"
   homepage "http://genesis-sim.org/GENESIS"
-  url "https://github.com/physicalist/genesis2.4gamma/archive/v2.4-rc2.tar.gz"
-  sha1 "1e28893a22436e333d3917a5fc35dc346475bd08"
-  version "2.4-rc2"
+  url "https://github.com/physicalist/genesis2.4gamma/archive/v2.4.tar.gz"
+  sha1 "915299eac0955d4f74a14a7582a6e3b6e4274394"
+  version "2.4"
 
   head "https://github.com/physicalist/genesis2.4gamma.git" #, :using => :git
 
@@ -31,27 +31,32 @@ class Genesis < Formula
                           "--disable-silent-rules",
                           "--prefix=#{prefix}"
 
+    # build: always install X-less version, without GUI
+    system "make", "nxgenesis"
+    system "make", "nxinstall"
+
+    # also build X11-supported gui version (requires Xquartz!)
     if build.with? :x11
-      system "make"
+      system "make", "genesis"
       system "make", "install"
-    else
-      # build special version without GUI
-      system "make", "nxgenesis"
-      system "make", "nxinstall"
     end
   end
 
   test do
-    (testpath/".simrc").install "#{prefix}/startup/.simrc"
+    (testpath).install "#{prefix}/startup/.simrc"
 
     (testpath/"test.g").write <<-EOS.undent
-      setrand -sprng
-      randseed 0
-      echo {rand 0 1} {rand 0 1} {rand 0 1} {rand 0 1} {rand 0 1}
-      quit
+       quit
     EOS
 
-    system "#{bin}/genesis", "#{testpath}/test.g"
+    system "#{bin}/nxgenesis", "#{testpath}/test.g"
+  end
+
+  def caveats; <<-EOS.undent
+    The `convert` utility for model conversion from genesis-1.4 to genesis-2.0
+    format was renamed to `genconvert` to avoid a naming conflict with
+    ImageMagick
+    EOS
   end
 end
 __END__
