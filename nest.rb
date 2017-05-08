@@ -14,17 +14,12 @@ class Nest < Formula
   end
 
   option "with-python", "Build Python2 bindings (PyNEST)."
-  option "with-python3", "Build Python3 bindings (PyNEST, precedence over --with-python)."
+  option "with-python3", "Build Python3 bindings (PyNEST)."
   option "without-openmp", "Build without OpenMP support."
   needs :openmp if build.with? "openmp"
 
   depends_on "gsl" => :recommended
   depends_on :mpi => [:optional, :cc, :cxx]
-
-  resource "Cython" do
-    url "https://files.pythonhosted.org/packages/b7/67/7e2a817f9e9c773ee3995c1e15204f5d01c8da71882016cac10342ef031b/Cython-0.25.2.tar.gz"
-    sha256 "f141d1f9c27a07b5a93f7dc5339472067e2d7140d1c5a9e20112a5665ca60306"
-  end
 
   # Any Python >= 2.7 < 3.x is okay (either from macOS or brewed)
   depends_on :python => :optional
@@ -53,6 +48,11 @@ class Nest < Formula
     EOS
   end
 
+  resource "Cython" do
+    url "https://files.pythonhosted.org/packages/b7/67/7e2a817f9e9c773ee3995c1e15204f5d01c8da71882016cac10342ef031b/Cython-0.25.2.tar.gz"
+    sha256 "f141d1f9c27a07b5a93f7dc5339472067e2d7140d1c5a9e20112a5665ca60306"
+  end
+
   def install
     ENV.delete("CFLAGS")
     ENV.delete("CXXFLAGS")
@@ -63,43 +63,52 @@ class Nest < Formula
     args << "-Dwith-openmp=OFF" if build.without? "openmp"
     args << "-Dwith-gsl=OFF" if build.without? "gsl"
 
-    if build.with? "python3"
-      args << "-Dwith-python=3"
-
-      # Add local build resource Cython residing in buildpath to paths, with correct python version
-      pyver = Language::Python.major_minor_version "python3"
-      ENV.prepend_create_path "PATH", buildpath/"cython/bin"
-      ENV.prepend_create_path "PYTHONPATH", buildpath/"cython/lib/python#{pyver}/site-packages"
-
-      resource("Cython").stage do
-        system "python3", *Language::Python.setup_install_args(buildpath/"cython")
-      end
-    elsif build.with? "python"
-      dylib = OS.mac? ? "dylib" : "so"
-      py_prefix = `python-config --prefix`.chomp
-      py_lib = "#{py_prefix}/lib"
-
-      args << "-Dwith-python=2"
-      args << "-DPYTHON_LIBRARY=#{py_lib}/libpython2.7.#{dylib}"
-      args << "-DPYTHON_INCLUDE_DIR=#{py_prefix}/include/python2.7"
-
-      pyver = Language::Python.major_minor_version "python"
-      ENV.prepend_create_path "PATH", buildpath/"cython/bin"
-      ENV.prepend_create_path "PYTHONPATH", buildpath/"cython/lib/python#{pyver}/site-packages"
-
-      resource("Cython").stage do
-        system "python", *Language::Python.setup_install_args(buildpath/"cython")
-      end
-    else
+    # default build without PyNEST
+    if build.without? "python" and build.without? "python3"
       args << "-Dwith-python=OFF"
+      # "out of source" build
+      mkdir "build" do
+        system "cmake", "..", *args
+        system "make"
+        system "make", "install"
+      end
     end
 
-    # "out of source" build
-    mkdir "build" do
-      system "cmake", "..", *args
-      system "make"
-      system "make", "install"
+    # else:
+    Language::Python.each_python(build) do |python, version|
+      # Add local build resource Cython residing in buildpath to paths, with correct python version
+      ENV.prepend_create_path "PATH", buildpath/"cython/bin"
+      ENV.prepend_create_path "PYTHONPATH", buildpath/"cython/lib/python#{version}/site-packages"
+
+      resource("Cython").stage do
+        system python, *Language::Python.setup_install_args(buildpath/"cython")
+      end
+
+      py_args = args.dup
+
+      dylib = OS.mac? ? "dylib" : "so"
+      py_prefix = `#{python}-config --prefix`.chomp
+      (py_ver_maj, _py_ver_min) = version.to_s.split(".")
+
+      py_args << "-Dwith-python=#{py_ver_maj}"
+      py_args << "-DPYTHON_LIBRARY=#{py_prefix}/lib/libpython#{version}.#{dylib}"
+
+      # "out of source" build
+      mkdir "build-#{python}" do
+        system "cmake", "..", *py_args
+        system "make"
+        system "make", "install"
+      end
     end
+  end
+
+  def caveats
+    <<-EOS.undent
+      Due to how NEST's build system is designed, concurrent Python2.x and
+      Python3.x support requires compiling NEST twice.
+      `brew test` runs the PyNEST tests with each python version for which
+      support has been enabled during compilation, so it might take a while.
+    EOS
   end
 
   test do
@@ -133,12 +142,12 @@ class Nest < Formula
       File.open(ENV["HOME"]+"/.nestrc", "w") { |file| file.write(nestrc) }
     end
 
-    # run all tests
-    args = []
-    args << "--test-pynest" if build.with?("python") || build.with?("python3")
-    if build.with? "python3"
-      ENV["PYTHON"] = "python3"
+    # run all tests in vanilla NEST
+    system pkgshare/"extras/do_tests.sh"
+
+    # test PyNEST for enabled python versions
+    Language::Python.each_python(build) do |python, _version|
+      system python, "-c", "import nest; nest.test()"
     end
-    system pkgshare/"extras/do_tests.sh", *args
   end
 end
