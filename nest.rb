@@ -27,7 +27,6 @@ class Nest < Formula
     depends_on "numpy"
     depends_on "scipy"
     depends_on "matplotlib"
-    depends_on "nose" => :python
   end
 
   depends_on :python3 => :optional
@@ -35,7 +34,6 @@ class Nest < Formula
     depends_on "numpy" => "with-python3"
     depends_on "scipy" => "with-python3"
     depends_on "matplotlib" => "with-python3"
-    depends_on "nose" => :python3
   end
 
   depends_on "libtool" => :run
@@ -63,25 +61,24 @@ class Nest < Formula
     args << "-Dwith-openmp=OFF" if build.without? "openmp"
     args << "-Dwith-gsl=OFF" if build.without? "gsl"
 
-    # default build without PyNEST
-    if build.without? "python" and build.without? "python3"
-      args << "-Dwith-python=OFF"
-      # "out of source" build
-      mkdir "build" do
-        system "cmake", "..", *args
-        system "make"
-        system "make", "install"
-      end
+    # default: build without PyNEST
+    args << "-Dwith-python=OFF"
+    # "out of source" build
+    mkdir "build" do
+      system "cmake", "..", *args
+      system "make"
+      system "make", "install"
     end
 
-    # else:
+    # Build Python extensions, if requested
     Language::Python.each_python(build) do |python, version|
       # Add local build resource Cython residing in buildpath to paths, with correct python version
       ENV.prepend_create_path "PATH", buildpath/"cython/bin"
       ENV.prepend_create_path "PYTHONPATH", buildpath/"cython/lib/python#{version}/site-packages"
 
+      # Don't compile Cython to significantly reduce total build time
       resource("Cython").stage do
-        system python, *Language::Python.setup_install_args(buildpath/"cython")
+        system python, *Language::Python.setup_install_args(buildpath/"cython") + ['--no-cython-compile']
       end
 
       py_args = args.dup
@@ -96,7 +93,15 @@ class Nest < Formula
       # "out of source" build
       mkdir "build-#{python}" do
         system "cmake", "..", *py_args
-        system "make"
+        # here be hackery: copy nest's base files from default build
+        # ... but does it work yet???
+#        Dir.glob("**/*.o").each do |f|
+#          dest = File.dirname(f).sub("build","build-#{python}")
+#          mkdir_p(dest)
+#          puts "cp ", f, "->", dest
+#          cp(f, dest, [:verbose])
+#        end
+        system "make", "pynestkernel"
         system "make", "install"
       end
     end
