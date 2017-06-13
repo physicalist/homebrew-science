@@ -27,7 +27,6 @@ class Nest < Formula
     depends_on "numpy"
     depends_on "scipy"
     depends_on "matplotlib"
-    depends_on "nose" => :python
   end
 
   depends_on :python3 => :optional
@@ -35,7 +34,6 @@ class Nest < Formula
     depends_on "numpy" => "with-python3"
     depends_on "scipy" => "with-python3"
     depends_on "matplotlib" => "with-python3"
-    depends_on "nose" => :python3
   end
 
   depends_on "libtool" => :run
@@ -80,8 +78,9 @@ class Nest < Formula
       ENV.prepend_create_path "PATH", buildpath/"cython/bin"
       ENV.prepend_create_path "PYTHONPATH", buildpath/"cython/lib/python#{version}/site-packages"
 
+      # Don't compile Cython to significantly reduce total build time
       resource("Cython").stage do
-        system python, *Language::Python.setup_install_args(buildpath/"cython")
+        system python, *Language::Python.setup_install_args(buildpath/"cython") + ['--no-cython-compile']
       end
 
       py_args = args.dup
@@ -104,8 +103,6 @@ class Nest < Formula
 
   def caveats
     <<-EOS.undent
-      Due to how NEST's build system is designed, concurrent Python2.x and
-      Python3.x support requires compiling NEST twice.
       `brew test` runs the PyNEST tests with each python version for which
       support has been enabled during compilation, so it might take a while.
     EOS
