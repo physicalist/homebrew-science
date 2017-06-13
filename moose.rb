@@ -15,11 +15,14 @@ class Moose < Formula
   end
 
   option "with-sbml", "Enable sbml support"
+  option "with-python", "Enable Python2 bindings"
+  option "with-python3", "Enable Python3 bindings"
 
   depends_on "cmake" => :build
   depends_on "gsl"
   depends_on "hdf5"
-  depends_on :python if MacOS.version <= :snow_leopard
+  depends_on :python => :optional unless MacOS.version <= :snow_leopard
+  depends_on :python3 => :optional
   depends_on "numpy"
 
   if build.with?("sbml")
@@ -34,11 +37,11 @@ class Moose < Formula
     # FindHDF5.cmake needs a little help
     ENV.prepend "LDFLAGS", "-lhdf5 -lhdf5_hl"
 
-    args = std_cmake_args
+    args = std_cmake_args.dup
     if build.with?("sbml")
       resource("sbml").stage do
         mkdir "_build" do
-          sbml_args = std_cmake_args
+          sbml_args = std_cmake_args.dup
           sbml_args << "-DCMAKE_INSTALL_PREFIX=#{buildpath}/_libsbml_static"
           system "cmake", "..", *sbml_args
           system "make", "install"
@@ -48,24 +51,30 @@ class Moose < Formula
     end
 
     args << "-DCMAKE_SKIP_RPATH=ON"
-    mkdir "_build" do
-      system "cmake", "..", "-DPYTHON_EXECUTABLE:FILEPATH=#{which("python")}", *args
-      system "make"
-    end
 
-    Dir.chdir("_build/python") do
-      system "python", *Language::Python.setup_install_args(prefix)
+    Language::Python.each_python(build) do |python, _version|
+      mkdir "_build-#{python}" do
+        system "cmake", "..", "-DPYTHON_EXECUTABLE:FILEPATH=#{python}", *args
+        system "make"
+
+        # build & install pymoose
+        Dir.chdir("python") do
+          system python, *Language::Python.setup_install_args(prefix)
+        end
+      end
     end
   end
 
   def caveats; <<-EOS.undent
     You need to install `networkx` and `suds-jurko` using python-pip. Open terminal
-    and execute following command:
+    and execute the following command:
       $ pip install suds-jurko networkx
     EOS
   end
 
   test do
-    system "python", "-c", "import moose"
+    Language::Python.each_python(build) do |python, _version|
+      system python, "-c", "import moose"
+    end
   end
 end
